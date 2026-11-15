@@ -31,6 +31,8 @@
     ".boot-status{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:90vw;padding:10px 14px;border-radius:8px;font-size:13px;background:#0f172a;color:#fff;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.2)}" +
     ".boot-status.ok{background:#0d9488}.boot-status.error{background:#b91c1c}" +
     ".boot-status button{margin-left:10px;min-height:32px;padding:0 10px;border:0;border-radius:6px;background:#fff;color:#b91c1c;font:inherit;cursor:pointer}" +
+    ".boot-change{position:sticky;top:0;z-index:9998;padding:10px 14px;background:#fef3c7;border-bottom:1px solid #f59e0b;color:#78350f;font-size:13px;text-align:center}" +
+    ".boot-change button{margin-left:10px;min-height:36px;padding:0 12px;border:0;border-radius:6px;background:#f59e0b;color:#fff;font:inherit;cursor:pointer}" +
     ".boot-logout{display:block;margin:24px auto;padding:8px 16px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;font:inherit;cursor:pointer}";
   document.head.appendChild(style);
 
@@ -186,8 +188,9 @@
       fetchAll("cafe_transactions", "tx_date,created_at,id"),
       fetchAll("cafe_sales_daily", "sales_date,product"), // 일자별 판매 수량(재고 계산·판매 화면용, 약 6천 건 = 1,000건씩 여러 번)
       fetchAll("cafe_settings_version", "id"), // 설정이 저장될 때마다 1씩 오르는 번호 — 동시에 고칠 때 덮어쓰기를 막는 데 쓴다
+      fetchAll("cafe_change_marker", "id"), // 데이터가 바뀔 때마다 오르는 번호 — 다른 기기에서 바뀌었는지 알아보는 데 쓴다
     ]).then(function (r) {
-      return { materials: r[0], semi: r[1], recipes: r[2], aliases: r[3], categories: r[4], transactions: r[5], sales: r[6], settingsVersion: r[7] };
+      return { materials: r[0], semi: r[1], recipes: r[2], aliases: r[3], categories: r[4], transactions: r[5], sales: r[6], settingsVersion: r[7], changeMarker: r[8] };
     });
   }
 
@@ -285,6 +288,7 @@
       });
 
     settingsVersion = d.settingsVersion && d.settingsVersion[0] ? Number(d.settingsVersion[0].version) : null;
+    changeSeq = d.changeMarker && d.changeMarker[0] ? Number(d.changeMarker[0].seq) : null;
 
     window.RAW_MATERIALS = rawMaterials;
     window.DELETED_MATERIALS = deletedMaterials;
@@ -313,7 +317,7 @@
     });
   }
 
-  function dbWrite(method, path, body, extra) {
+  function dbWriteRaw(method, path, body, extra) {
     return freshToken()
       .then(function (t) {
         var headers = { apikey: PUBLISHABLE_KEY, Authorization: "Bearer " + t, "Content-Type": "application/json" };
@@ -339,6 +343,27 @@
         }
         throw e;
       });
+  }
+
+  // 내가 저장하는 중에는 "다른 곳에서 바뀜" 확인을 건너뛰고, 저장이 끝나면 내 변경은 새 기준 번호로 받아들인다(아래 변경 감시 참고).
+  var pendingWrites = 0;
+  function trackWrite(promise) {
+    pendingWrites++;
+    return promise.then(
+      function (v) {
+        pendingWrites--;
+        rebaselineChangeMarker();
+        return v;
+      },
+      function (e) {
+        pendingWrites--;
+        throw e;
+      }
+    );
+  }
+
+  function dbWrite(method, path, body, extra) {
+    return trackWrite(dbWriteRaw(method, path, body, extra));
   }
 
   window.cafeDb = {
@@ -433,6 +458,10 @@
   var settingsVersion = null;
 
   function saveSettings(data) {
+    return trackWrite(saveSettingsRaw(data));
+  }
+
+  function saveSettingsRaw(data) {
     return freshToken()
       .then(function (t) {
         var body = { p_pw: adminPw() || "", p_data: data };
@@ -583,6 +612,85 @@
   }
   window.cafeShowStartupAlerts = showStartupAlerts; // 시험용
 
+  // ---------- 다른 기기에서 바뀌었는지 알려 주는 배너 ----------
+  // DB의 "변경 표시 번호"(cafe_change_marker, 입고·폐기·실사·설정·판매 자료가 바뀔 때마다 오름)를 화면을 열 때 읽어 두고,
+  // 앱이 다시 보일 때와 3분마다 다시 읽어 번호가 달라졌으면 맨 위에 안내 배너를 띄운다. 화면을 저절로 다시 그리지는 않는다
+  // (입력 중인 내용이 지워지지 않게) — 사용자가 [새로고침]을 누르면 최신 상태가 된다.
+  // 내가 저장한 변경은 번호가 오르더라도 배너를 띄우지 않는다(저장이 끝나면 새 번호를 기준으로 삼는다).
+  var changeSeq = null;
+  var CHANGE_CHECK_MS = 180000;
+
+  function readChangeSeq() {
+    return freshToken().then(function (t) {
+      return fetch(SUPABASE_URL + "/rest/v1/cafe_change_marker?select=seq&id=eq.1", {
+        headers: { apikey: PUBLISHABLE_KEY, Authorization: "Bearer " + t },
+      }).then(function (res) {
+        if (!res.ok) {
+          throw new Error("marker " + res.status);
+        }
+        return res.json().then(function (rows) {
+          return rows[0] ? Number(rows[0].seq) : null;
+        });
+      });
+    });
+  }
+
+  function rebaselineChangeMarker() {
+    if (changeSeq === null) {
+      return;
+    }
+    readChangeSeq().then(
+      function (seq) {
+        if (seq !== null && pendingWrites === 0) {
+          changeSeq = seq;
+        }
+      },
+      function () {}
+    );
+  }
+
+  function showChangeBanner() {
+    if (document.getElementById("boot-change-bar")) {
+      return;
+    }
+    var bar = document.createElement("div");
+    bar.id = "boot-change-bar";
+    bar.className = "boot-change";
+    bar.appendChild(document.createTextNode("다른 기기에서 데이터가 바뀌었습니다. 새로고침하면 최신 내용을 볼 수 있습니다."));
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "새로고침";
+    btn.addEventListener("click", function () {
+      location.reload();
+    });
+    bar.appendChild(btn);
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+
+  function checkChanges() {
+    if (changeSeq === null || pendingWrites > 0 || document.hidden) {
+      return Promise.resolve();
+    }
+    return readChangeSeq().then(
+      function (seq) {
+        if (seq !== null && pendingWrites === 0 && seq !== changeSeq) {
+          showChangeBanner();
+        }
+      },
+      function () {} // 네트워크가 잠깐 끊겨도 조용히 넘어간다(다음 확인 때 다시 본다)
+    );
+  }
+
+  function startChangeWatch() {
+    setInterval(checkChanges, CHANGE_CHECK_MS);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) {
+        checkChanges();
+      }
+    });
+  }
+  window.cafeCheckChanges = checkChanges; // 시험용
+
   // ---------- 앱 설치·푸시용 서비스 워커 등록 ----------
   // sw.js는 앱 맨 위 폴더(webapp/·배포용/)에 있다. 등록에 실패해도 앱 동작에는 영향이 없다.
   function registerServiceWorker() {
@@ -634,6 +742,7 @@
         }
         showStartupAlerts();
         registerServiceWorker();
+        startChangeWatch();
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "boot-logout";
