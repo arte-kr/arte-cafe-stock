@@ -95,7 +95,9 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("material-select").addEventListener("change", function () {
     fillUnits(unitSelect, unitHint, selectedMaterial(), false);
   });
-  fillUnits(unitSelect, unitHint, selectedMaterial(), false);
+  if (selectedMaterial()) {
+    fillUnits(unitSelect, unitHint, selectedMaterial(), false); // 등록된 원재료가 하나도 없으면(빈 상태) 건너뛴다
+  }
 
   // ---- 월별 입고 내역 ----
   // 발주단위(EA)로 딱 나누어떨어지면 "5EA (5,000ml)", 아니면 기본 단위로 표시한다

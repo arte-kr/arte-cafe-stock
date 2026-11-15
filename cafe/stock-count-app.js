@@ -115,6 +115,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function updateReadout() {
     var m = findRawMaterial(materialSelect.value);
+    if (!m) {
+      readout.textContent = "등록된 원재료가 없습니다. 설정에서 원재료를 먼저 등록해 주세요.";
+      return;
+    }
     readout.textContent =
       dateInput.value + " 기준 추정재고(참고용): " + formatStockQty(m.id, estimateAt(m.id, dateInput.value));
   }
@@ -124,7 +128,9 @@ document.addEventListener("DOMContentLoaded", function () {
     updateReadout();
   });
   dateInput.addEventListener("change", updateReadout);
-  fillUnits(unitSelect, unitHint, findRawMaterial(materialSelect.value));
+  if (findRawMaterial(materialSelect.value)) {
+    fillUnits(unitSelect, unitHint, findRawMaterial(materialSelect.value)); // 원재료가 하나도 없으면(빈 상태) 건너뛴다
+  }
   updateReadout();
 
   // ---- 월별 실사보정 내역 ----

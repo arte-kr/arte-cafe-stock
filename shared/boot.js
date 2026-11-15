@@ -550,6 +550,24 @@
     });
   }
 
+  // ---------- 앱을 열면 발주 필요 알림창 자동 표시 ----------
+  // 앱을 연 뒤 첫 화면에서만(탭/앱을 새로 열 때마다 1번, 화면을 옮길 때마다는 아님) 알림 대상이 있을 때 알림창을 띄운다.
+  // 알림 내용·창은 shell.js(openShellAlerts)와 inventory-calc.js(getShellAlerts)가 만든다. 🔔 숫자는 계속 보인다.
+  function showStartupAlerts() {
+    try {
+      if (sessionStorage.getItem("cafe_startup_alert_shown") === "1") {
+        return;
+      }
+      sessionStorage.setItem("cafe_startup_alert_shown", "1");
+    } catch (e) {
+      return; // 저장소를 못 쓰면 화면을 옮길 때마다 뜨는 것을 막기 위해 띄우지 않는다
+    }
+    if (typeof getShellAlerts === "function" && typeof openShellAlerts === "function" && getShellAlerts().length > 0) {
+      openShellAlerts();
+    }
+  }
+  window.cafeShowStartupAlerts = showStartupAlerts; // 시험용
+
   // ---------- 화면 스크립트 순서대로 실행 ----------
   // 배포 후 코드를 고쳐도 브라우저가 예전 파일을 쓰지 않도록 스크립트 주소에 버전 값을 붙인다.
   // 값은 각 HTML의 boot.js 주소(?v=...)와 같게 맞춰 배포 때마다 함께 올린다.
@@ -586,6 +604,7 @@
         if (needAdmin) {
           startAutoSave();
         }
+        showStartupAlerts();
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "boot-logout";

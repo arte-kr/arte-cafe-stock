@@ -74,7 +74,7 @@ function openShellAlerts() {
           })
           .join("") +
         "</ul>") +
-    '<div class="shell-alert-actions"><button type="button" data-close="1">닫기</button></div>';
+    '<div class="shell-alert-actions"><button type="button" data-close="1">확인</button></div>';
   dlg.addEventListener("click", function (e) {
     if (e.target === dlg || e.target.closest("[data-close]")) {
       dlg.close();
