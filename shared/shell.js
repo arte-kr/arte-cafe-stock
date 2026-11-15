@@ -1,6 +1,15 @@
 // 공통 셸: 모든 ARTE CAFE 화면이 이 함수로 상단 헤더/네비를 채운다.
 // 2단계(Supabase 연동)에서 로그인·실제 웹푸시가 들어와도 title/activeNav 시그니처는 그대로 둘 것.
 // subtitle은 선택값(없으면 생략) — 기존 호출부를 깨지 않기 위해 3번째 자리에 추가했다.
+// 헤더 아이콘: 이모지(기기마다 색·모양이 달라 어울리지 않음) 대신 같은 선 두께의 단색 선 아이콘을 쓴다(색은 글자색을 따라간다).
+var SHELL_ICON_ATTRS = 'width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+var SHELL_ICON_GEAR =
+  "<svg " +
+  SHELL_ICON_ATTRS +
+  '><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
+var SHELL_ICON_BELL =
+  "<svg " + SHELL_ICON_ATTRS + '><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+
 function renderShell(title, activeNav, subtitle) {
   var navItems = [
     { key: "receiving", label: "입고", href: "receiving.html" },
@@ -42,8 +51,11 @@ function renderShell(title, activeNav, subtitle) {
     subtitleHtml +
     "</div>" +
     '<div class="shell-icons">' +
-    '<a class="shell-alert-btn" href="settings.html" title="설정(레시피 등록)">⚙️</a>' +
-    '<button type="button" class="shell-alert-btn shell-bell" id="shell-bell" aria-label="알림">🔔' +
+    '<a class="shell-alert-btn" href="settings.html" title="설정" aria-label="설정">' +
+    SHELL_ICON_GEAR +
+    "</a>" +
+    '<button type="button" class="shell-alert-btn shell-bell" id="shell-bell" aria-label="알림">' +
+    SHELL_ICON_BELL +
     (alerts.length > 0 ? '<span class="shell-badge">' + alerts.length + "</span>" : "") +
     "</button>" +
     "</div>" +
