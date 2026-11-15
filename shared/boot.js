@@ -185,8 +185,9 @@
       fetchAll("cafe_graph_categories", "name"),
       fetchAll("cafe_transactions", "tx_date,created_at,id"),
       fetchAll("cafe_sales_daily", "sales_date,product"), // 일자별 판매 수량(재고 계산·판매 화면용, 약 6천 건 = 1,000건씩 여러 번)
+      fetchAll("cafe_settings_version", "id"), // 설정이 저장될 때마다 1씩 오르는 번호 — 동시에 고칠 때 덮어쓰기를 막는 데 쓴다
     ]).then(function (r) {
-      return { materials: r[0], semi: r[1], recipes: r[2], aliases: r[3], categories: r[4], transactions: r[5], sales: r[6] };
+      return { materials: r[0], semi: r[1], recipes: r[2], aliases: r[3], categories: r[4], transactions: r[5], sales: r[6], settingsVersion: r[7] };
     });
   }
 
@@ -282,6 +283,8 @@
       .sort(function (a, b) {
         return b.qty - a.qty;
       });
+
+    settingsVersion = d.settingsVersion && d.settingsVersion[0] ? Number(d.settingsVersion[0].version) : null;
 
     window.RAW_MATERIALS = rawMaterials;
     window.DELETED_MATERIALS = deletedMaterials;
@@ -426,18 +429,27 @@
     return { materials: materials, semi: semi, recipes: recipes, aliases: aliases, categories: categories };
   }
 
+  // 화면이 설정을 읽은 시점의 설정 버전 번호. 저장할 때 함께 보내, 그 사이 다른 곳에서 저장했으면 DB가 거부한다.
+  var settingsVersion = null;
+
   function saveSettings(data) {
     return freshToken()
       .then(function (t) {
+        var body = { p_pw: adminPw() || "", p_data: data };
+        if (settingsVersion !== null) {
+          body.p_base_version = settingsVersion;
+        }
         return fetch(SUPABASE_URL + "/rest/v1/rpc/cafe_settings_save", {
           method: "POST",
           headers: { apikey: PUBLISHABLE_KEY, Authorization: "Bearer " + t, "Content-Type": "application/json" },
-          body: JSON.stringify({ p_pw: adminPw() || "", p_data: data }),
+          body: JSON.stringify(body),
         });
       })
       .then(function (res) {
         if (res.ok) {
-          return;
+          return res.json().then(function (v) {
+            settingsVersion = Number(v); // 내가 저장했으니 다음 저장은 이 번호를 기준으로 한다
+          });
         }
         return res
           .json()
@@ -462,6 +474,9 @@
     }
     if (e && e.code === "28000") {
       return "관리자 비밀번호가 맞지 않습니다. 설정 화면을 새로고침해 비밀번호를 다시 입력해 주세요.";
+    }
+    if (e && (e.code === "PT409" || e.status === 409)) {
+      return "다른 기기(또는 다른 창)에서 설정이 먼저 바뀌어 저장하지 않았습니다. 새로고침해서 최신 설정에서 다시 입력해 주세요.";
     }
     if (e && e.code === "42501") {
       return "이 계정은 설정을 저장할 권한이 없습니다.";
