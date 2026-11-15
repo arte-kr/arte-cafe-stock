@@ -568,6 +568,19 @@
   }
   window.cafeShowStartupAlerts = showStartupAlerts; // 시험용
 
+  // ---------- 앱 설치·푸시용 서비스 워커 등록 ----------
+  // sw.js는 앱 맨 위 폴더(webapp/·배포용/)에 있다. 등록에 실패해도 앱 동작에는 영향이 없다.
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) {
+      return;
+    }
+    try {
+      navigator.serviceWorker.register(new URL("../sw.js", bootTag.src).href).catch(function () {});
+    } catch (e) {
+      // 무시
+    }
+  }
+
   // ---------- 화면 스크립트 순서대로 실행 ----------
   // 배포 후 코드를 고쳐도 브라우저가 예전 파일을 쓰지 않도록 스크립트 주소에 버전 값을 붙인다.
   // 값은 각 HTML의 boot.js 주소(?v=...)와 같게 맞춰 배포 때마다 함께 올린다.
@@ -605,6 +618,7 @@
           startAutoSave();
         }
         showStartupAlerts();
+        registerServiceWorker();
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "boot-logout";
