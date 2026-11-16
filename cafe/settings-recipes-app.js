@@ -124,13 +124,14 @@ document.addEventListener("DOMContentLoaded", function () {
     if (a === b) {
       return true;
     }
-    seen = seen || {};
-    if (seen[a]) {
+    if (seen && seen[a]) {
       return false;
     }
-    seen[a] = true;
+    // 가지(경로)마다 따로 복사해서 넘긴다 — 같은 제조음료를 서로 다른 가지에서 같이 쓰는 건(마름모꼴 구조) 순환이 아니므로 걸러지면 안 된다.
+    var nextSeen = Object.assign({}, seen);
+    nextSeen[a] = true;
     return recipeVersionRows(a, currentStartOf(a)).some(function (r) {
-      return findSemi(r.materialId) && semiDependsOn(r.materialId, b, seen);
+      return findSemi(r.materialId) && semiDependsOn(r.materialId, b, nextSeen);
     });
   }
 
@@ -857,7 +858,12 @@ document.addEventListener("DOMContentLoaded", function () {
       pending = null;
       renderCards();
     } else if (act === "confirm") {
-      confirmPending(card);
+      // 저장 중 예상 못 한 오류가 나도 "아무 반응 없음"이 아니라 화면에 이유가 보이도록 한다.
+      try {
+        confirmPending(card);
+      } catch (err) {
+        showMsg("저장하지 못했습니다: " + (err && err.message ? err.message : err), "error");
+      }
     } else if (act === "delcard") {
       deleteMenu(card.getAttribute("data-menu"));
     } else if (act === "addline") {
@@ -954,7 +960,11 @@ document.addEventListener("DOMContentLoaded", function () {
   grid.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && e.target.matches("[data-input]")) {
       e.preventDefault();
-      confirmPending(e.target.closest(".recipe-card"));
+      try {
+        confirmPending(e.target.closest(".recipe-card"));
+      } catch (err) {
+        showMsg("저장하지 못했습니다: " + (err && err.message ? err.message : err), "error");
+      }
     }
   });
 
