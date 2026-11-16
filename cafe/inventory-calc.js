@@ -59,13 +59,16 @@ function recipeRowsAt(menu, date) {
 }
 
 /**
- * 완제품/제조음료 수량을 레시피로 원재료 소모량으로 환산한다.
+ * 완제품/제조음료 수량을 레시피로 원재료 소모량으로 환산한다. 제조음료는 다른 제조음료를 재료로 쓸 수 있어
+ * 완제품 > 제조음료 > 제조음료 > 원재료처럼 여러 단계를 내려갈 수 있다(설정 화면에서 순환 참조는 막는다).
  * RECIPES에 productName이 없으면 원재료 자체로 보고 그대로 반환한다(재귀 종료 조건).
  * @param {string} targetName
  * @param {number} qty
+ * @param {string} [date]
+ * @param {Object} [_ancestors] 내부용 — 지금 경로에서 이미 거쳐온 메뉴 이름(순환 참조 안전장치, 호출할 때 생략한다)
  * @returns {{materialId: string, amount: number}[]}
  */
-function explodeToRawMaterials(targetName, qty, date) {
+function explodeToRawMaterials(targetName, qty, date, _ancestors) {
   targetName = PRODUCT_ALIASES[targetName] || targetName; // 연결된 판매상품이면 기준 메뉴로 환산
   // date(기록 일자)에 적용 중이던 레시피 버전으로 환산한다 — 레시피가 바뀌어도 과거 기록은 당시 레시피로 계산된다.
   var rows = recipeRowsAt(targetName, date);
@@ -74,11 +77,19 @@ function explodeToRawMaterials(targetName, qty, date) {
     return [{ materialId: targetName, amount: qty }];
   }
 
+  // 설정 화면이 저장 전에 순환 참조를 막지만, 혹시 데이터가 순환을 이루고 있어도 여기서 무한 재귀로 멈추지 않도록
+  // "지금 경로에서 이미 지나온 메뉴"면 더 내려가지 않고 멈춘다 (같은 메뉴를 서로 다른 가지에서 쓰는 건 순환이 아니므로 괜찮다).
+  if (_ancestors && _ancestors[targetName]) {
+    return [{ materialId: targetName, amount: qty }];
+  }
+  var ancestors = Object.assign({}, _ancestors);
+  ancestors[targetName] = true;
+
   var resultMap = {};
   rows.forEach(function (row) {
     // 제조음료 줄은 "1회 완성량(batchQty)을 만들 때의 투입량"이라 사용량/완성량 비율을 곱한다. 완제품 줄은 batchQty가 없어 1
     var consumed = (qty / (row.batchQty || 1)) * row.qtyPerUnit * (1 + row.lossRate);
-    var sub = explodeToRawMaterials(row.materialId, consumed, date); // 다단계(원재료→제조음료→완제품) 재귀 지원
+    var sub = explodeToRawMaterials(row.materialId, consumed, date, ancestors); // 다단계(원재료→제조음료→제조음료→완제품) 재귀 지원
     sub.forEach(function (s) {
       resultMap[s.materialId] = (resultMap[s.materialId] || 0) + s.amount;
     });
@@ -360,8 +371,9 @@ function formatOrderQty(materialId, baseQty) {
 }
 
 // ---- 제조음료 ----
-// SEMI_PRODUCTS = [{ name, unit }] — 원재료로 만든 중간 제품. 레시피 줄은 RECIPES에 productName=제조음료명으로 두고,
-// 줄마다 batchQty(1회 완성량, unit 기준)를 가진다. 완제품 레시피는 materialId에 제조음료명을 넣어 "몇 ml/g"로 가져다 쓴다.
+// SEMI_PRODUCTS = [{ name, unit }] — 원재료(또는 다른 제조음료)로 만든 중간 제품. 레시피 줄은 RECIPES에 productName=제조음료명으로 두고,
+// 줄마다 batchQty(1회 완성량, unit 기준)를 가진다. 완제품·다른 제조음료 레시피는 materialId에 제조음료명을 넣어 "몇 ml/g"로 가져다 쓴다
+// (완제품 > 제조음료 > 제조음료 > 원재료, 2026-11-16 — 순환 참조는 설정 > 제조음료 화면에서 저장 전에 막는다).
 
 function getSemiNames() {
   return SEMI_PRODUCTS.map(function (s) {

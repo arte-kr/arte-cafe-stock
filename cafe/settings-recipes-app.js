@@ -3,6 +3,8 @@
 // - 레시피는 버전(적용 시작일)으로 관리한다: 바꿀 때 기존 줄을 고치지 않고 새 버전을 추가하므로 과거 집계는 변하지 않는다.
 // - 제조음료(SEMI_PRODUCTS)는 원재료 구성과 별개로 "1회 완성량(batchQty, ml/g/EA)"을 직접 입력한다.
 //   완제품 레시피는 제조음료를 "몇 ml/g"로 재료처럼 가져다 쓰고, 계산은 완성량 대비 비율로 원재료까지 환산한다.
+// - 제조음료는 원재료뿐 아니라 다른 제조음료도 재료로 쓸 수 있다(완제품 > 제조음료 > 제조음료 > 원재료, 2026-11-16).
+//   순환 참조(A가 B를 쓰는데 B가 다시 A를 쓰는 것)는 semiDependsOn으로 저장 전에 막는다.
 // settings-recipes.html에서는 RECIPE_KIND가 없고, settings-semi.html에서는 RECIPE_KIND = "semi"를 먼저 선언한다.
 // renderSettingsSubNav는 settings-subnav.js, 버전 함수(recipeRowsAt 등)는 inventory-calc.js에서 온다.
 document.addEventListener("DOMContentLoaded", function () {
@@ -116,6 +118,50 @@ document.addEventListener("DOMContentLoaded", function () {
     return s ? { name: s.name, unit: s.unit } : null;
   }
 
+  // a가 (현재 적용 중인 레시피 기준으로) b를 재료로 쓰고 있는지, 몇 단계를 거쳐서라도 그런지.
+  // 제조음료 a에 b를 재료로 추가하기 전에 호출해서, b가 이미 a를 쓰고 있으면(= 추가하면 순환이 됨) 막는다.
+  function semiDependsOn(a, b, seen) {
+    if (a === b) {
+      return true;
+    }
+    seen = seen || {};
+    if (seen[a]) {
+      return false;
+    }
+    seen[a] = true;
+    return recipeVersionRows(a, currentStartOf(a)).some(function (r) {
+      return findSemi(r.materialId) && semiDependsOn(r.materialId, b, seen);
+    });
+  }
+
+  // 메뉴 이름을 바꾼다 — 이 메뉴의 모든 레시피 버전, 이 메뉴를 재료로 쓰는 다른 레시피, 연결된 판매상품,
+  // (완제품만) 그래프 분류까지 전부 새 이름으로 옮긴다. 과거 삭제 보관함(DELETED_RECIPES)은 그대로 둔다.
+  function renameMenu(oldName, newName) {
+    RECIPES.forEach(function (r) {
+      if (r.productName === oldName) {
+        r.productName = newName;
+      }
+      if (r.materialId === oldName) {
+        r.materialId = newName;
+      }
+    });
+    if (IS_SEMI) {
+      var s = findSemi(oldName);
+      if (s) {
+        s.name = newName;
+      }
+    }
+    Object.keys(PRODUCT_ALIASES).forEach(function (a) {
+      if (PRODUCT_ALIASES[a] === oldName) {
+        PRODUCT_ALIASES[a] = newName;
+      }
+    });
+    if (!IS_SEMI && Object.prototype.hasOwnProperty.call(GRAPH_CATEGORY, oldName)) {
+      GRAPH_CATEGORY[newName] = GRAPH_CATEGORY[oldName];
+      delete GRAPH_CATEGORY[oldName];
+    }
+  }
+
   function ingredientText(r) {
     var ing = findIngredient(r.materialId);
     return (
@@ -140,16 +186,19 @@ document.addEventListener("DOMContentLoaded", function () {
     return '<option value="' + esc(value) + '"' + (value === selectedId ? " selected" : "") + ">" + esc(label) + "</option>";
   }
 
-  function ingredientOptionsHtml(selectedId) {
+  // excludeMenu: 지금 편집 중인 제조음료 자기 자신은 재료 목록에서 뺀다(자기참조 방지).
+  // 더 먼 순환(A가 B를 쓰는데 B가 다시 A를 쓰는 것)은 막지 않고 저장 시 semiDependsOn으로 막는다.
+  function ingredientOptionsHtml(selectedId, excludeMenu) {
     var raw = RAW_MATERIALS.map(function (m) {
       return optHtml(m.id, m.name + " (" + m.unit + ")", selectedId);
     }).join("");
-    if (IS_SEMI) {
-      return raw; // 제조음료는 원재료로만 구성한다
-    }
-    var semi = SEMI_PRODUCTS.map(function (s) {
-      return optHtml(s.name, s.name + " (" + s.unit + ")", selectedId);
-    }).join("");
+    var semi = SEMI_PRODUCTS.filter(function (s) {
+      return s.name !== excludeMenu;
+    })
+      .map(function (s) {
+        return optHtml(s.name, s.name + " (" + s.unit + ")", selectedId);
+      })
+      .join("");
     return '<optgroup label="원재료">' + raw + "</optgroup>" + (semi ? '<optgroup label="제조음료">' + semi + "</optgroup>" : "");
   }
 
@@ -158,12 +207,12 @@ document.addEventListener("DOMContentLoaded", function () {
     return "소요량" + (ing ? "(" + ing.unit + ")" : "");
   }
 
-  function lineRowHtml(l) {
+  function lineRowHtml(l, excludeMenu) {
     l = l || {};
     var firstId = RAW_MATERIALS.length ? RAW_MATERIALS[0].id : "";
     return (
       '<div class="line-row"><select data-l-material>' +
-      ingredientOptionsHtml(l.materialId || firstId) +
+      ingredientOptionsHtml(l.materialId || firstId, excludeMenu) +
       '</select><input type="number" data-l-qty min="0" step="0.1" placeholder="' +
       esc(qtyPlaceholder(l.materialId || firstId)) +
       '" value="' +
@@ -300,7 +349,12 @@ document.addEventListener("DOMContentLoaded", function () {
     var cur = recipeVersionRows(menu, curStart);
     var semi2 = IS_SEMI ? findSemi(menu) : null;
     return (
-      '<div class="recipe-panel"><div class="form-field"><label>적용 시작일</label><input type="text" class="date-field" readonly data-date value="' +
+      '<div class="recipe-panel"><div class="form-field"><label>' +
+      (IS_SEMI ? "제조음료명" : "메뉴명") +
+      '</label><input type="text" data-name value="' +
+      esc(menu) +
+      '" /></div>' +
+      '<div class="form-field"><label>적용 시작일</label><input type="text" class="date-field" readonly data-date value="' +
       todayStr() +
       '" /></div>' +
       (IS_SEMI
@@ -315,11 +369,14 @@ document.addEventListener("DOMContentLoaded", function () {
       '</span><span>소요량</span><span>로스율(%)</span></div><div class="change-lines">' +
       cur
         .map(function (r) {
-          return lineRowHtml({
-            materialId: r.materialId,
-            qty: r.qtyPerUnit,
-            lossPct: parseFloat((r.lossRate * 100).toFixed(1)),
-          });
+          return lineRowHtml(
+            {
+              materialId: r.materialId,
+              qty: r.qtyPerUnit,
+              lossPct: parseFloat((r.lossRate * 100).toFixed(1)),
+            },
+            menu
+          );
         })
         .join("") +
       '</div><button type="button" class="btn-small btn-ghost" data-act="addline">+ 재료 줄 추가</button>' +
@@ -642,6 +699,15 @@ document.addEventListener("DOMContentLoaded", function () {
         showMsg("'" + menu + "' " + NOUN + "를 '" + name + "'(으)로 복사했습니다. 이제 독립된 " + NOUN + "입니다.", "success");
       }
     } else if (kind === "change") {
+      var newName = card.querySelector("[data-name]").value.trim();
+      if (!newName) {
+        showMsg((IS_SEMI ? "제조음료명" : "메뉴명") + "을 입력해 주세요.", "error");
+        return;
+      }
+      if (newName !== menu && isNameTaken(newName)) {
+        showMsg("'" + newName + "' 이름이 이미 사용 중입니다.", "error");
+        return;
+      }
       var date = card.querySelector("[data-date]").value;
       if (!date) {
         showMsg("적용 시작일을 입력해 주세요.", "error");
@@ -666,14 +732,34 @@ document.addEventListener("DOMContentLoaded", function () {
         showMsg(res.error, "error");
         return;
       }
+      if (IS_SEMI) {
+        var cyc = res.lines.filter(function (l) {
+          return findSemi(l.materialId) && semiDependsOn(l.materialId, menu);
+        })[0];
+        if (cyc) {
+          showMsg(
+            "'" + cyc.materialId + "'은(는) 이미 '" + menu + "'을(를) 재료로 쓰고 있어, 이대로 추가하면 서로 돌고 도는 순환 구조가 됩니다. 다른 제조음료를 선택해 주세요.",
+            "error"
+          );
+          return;
+        }
+      }
+      if (newName !== menu) {
+        renameMenu(menu, newName);
+      }
       res.lines.forEach(function (l) {
-        var row = { productName: menu, materialId: l.materialId, qtyPerUnit: l.qty, lossRate: l.lossPct / 100, effectiveFrom: date };
+        var row = { productName: newName, materialId: l.materialId, qtyPerUnit: l.qty, lossRate: l.lossPct / 100, effectiveFrom: date };
         if (IS_SEMI) {
           row.batchQty = batch;
         }
         RECIPES.push(row);
       });
-      showMsg("'" + menu + "' " + NOUN + "를 " + date + "부터 새 버전으로 적용합니다. 이전 기록은 기존 " + NOUN + "로 계산됩니다.", "success");
+      showMsg(
+        "'" + newName + "' " + NOUN + "를 " + date + "부터 새 버전으로 적용합니다." +
+          (newName !== menu ? " 이름도 '" + menu + "'에서 '" + newName + "'(으)로 바뀌었습니다 (다른 레시피가 이걸 재료로 쓰고 있었다면 그쪽도 같이 바뀝니다)." : "") +
+          " 이전 기록은 기존 " + NOUN + "로 계산됩니다.",
+        "success"
+      );
     }
     pending = null;
     renderAll();
@@ -775,7 +861,9 @@ document.addEventListener("DOMContentLoaded", function () {
     } else if (act === "delcard") {
       deleteMenu(card.getAttribute("data-menu"));
     } else if (act === "addline") {
-      card.querySelector(".change-lines").insertAdjacentHTML("beforeend", lineRowHtml());
+      card
+        .querySelector(".change-lines")
+        .insertAdjacentHTML("beforeend", lineRowHtml(null, card.getAttribute("data-menu")));
     } else if (act === "unalias") {
       var alias = btn.getAttribute("data-alias");
       confirmDialog({
@@ -797,11 +885,16 @@ document.addEventListener("DOMContentLoaded", function () {
   // 완제품: 연결된 판매상품은 '미반영'으로 돌아간다. 제조음료: 현재 완제품 레시피에서 쓰고 있으면 삭제할 수 없다.
   function deleteMenu(menu) {
     if (IS_SEMI) {
-      var usedBy = getFinishedMenuNames().filter(function (f) {
-        return recipeVersionRows(f, currentRecipeStart(f)).some(function (r) {
-          return r.materialId === menu;
+      // 완제품뿐 아니라 다른 제조음료도 이 제조음료를 재료로 쓰고 있을 수 있다(제조음료 > 제조음료)
+      var usedBy = getRecipeMenuNames()
+        .filter(function (m) {
+          return m !== menu;
+        })
+        .filter(function (f) {
+          return recipeVersionRows(f, currentRecipeStart(f)).some(function (r) {
+            return r.materialId === menu;
+          });
         });
-      });
       if (usedBy.length > 0) {
         confirmDialog({
           title: "'" + menu + "'은(는) 삭제할 수 없습니다",
