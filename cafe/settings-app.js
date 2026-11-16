@@ -86,7 +86,7 @@ document.addEventListener("DOMContentLoaded", function () {
       DELETED_MATERIALS.map(function (d, i) {
         return (
           '<li data-idx="' + i + '"><div class="unmapped-info"><span class="unmapped-name">' + d.material.name.replace(/&/g, "&amp;").replace(/</g, "&lt;") +
-          '</span><span class="unmapped-qty">' + d.deletedAt + ' 삭제</span></div><div class="unmapped-actions"><button type="button" class="btn-small" data-restore="1">복원</button></div></li>'
+          '</span><span class="unmapped-qty">' + d.deletedAt + ' 삭제</span></div><div class="unmapped-actions"><button type="button" class="btn-small" data-restore="1">복원</button><button type="button" class="btn-small btn-ghost" data-purge="1">완전 삭제</button></div></li>'
         );
       }).join("") +
       "</ul></div>";
@@ -293,7 +293,28 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   // 복원: 삭제 전 위치로 되돌린다. 같은 이름의 원재료가 이미 있으면 헷갈리므로 막는다
+  // 완전 삭제: 보관함에서도 완전히 지운다 — 복원할 수 없다(과거 입고·폐기·실사 기록은 "(삭제된 재료)"로 남는다)
   document.getElementById("deleted-material-wrap").addEventListener("click", function (e) {
+    var purgeBtn = e.target.closest("[data-purge]");
+    if (purgeBtn) {
+      var pIdx = parseInt(purgeBtn.closest("li").getAttribute("data-idx"), 10);
+      var pd = DELETED_MATERIALS[pIdx];
+      confirmDialog({
+        title: "'" + pd.material.name + "'을(를) 완전히 삭제할까요?",
+        message: "이후에는 복원할 수 없습니다.",
+        details: ["이 원재료가 들어간 과거 입고·폐기·실사 기록은 지워지지 않고 남지만, 원재료 이름 없이(삭제된 재료) 표시됩니다."],
+        confirmLabel: "완전 삭제",
+      }).then(function (ok) {
+        if (!ok) {
+          return;
+        }
+        DELETED_MATERIALS.splice(pIdx, 1);
+        showMaterialMsg("'" + pd.material.name + "' 원재료를 완전히 삭제했습니다.", "empty");
+        renderMaterialTable();
+      });
+      return;
+    }
+
     var btn = e.target.closest("[data-restore]");
     if (!btn) {
       return;

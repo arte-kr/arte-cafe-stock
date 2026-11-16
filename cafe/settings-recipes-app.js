@@ -565,7 +565,7 @@ document.addEventListener("DOMContentLoaded", function () {
             esc(it.d.deletedAt) +
             " 삭제" +
             (it.d.aliases.length ? " · 연결: " + esc(it.d.aliases.join(", ")) : "") +
-            '</span></div><div class="unmapped-actions"><button type="button" class="btn-small" data-ract="restore">복원</button></div></li>'
+            '</span></div><div class="unmapped-actions"><button type="button" class="btn-small" data-ract="restore">복원</button><button type="button" class="btn-small btn-ghost" data-ract="purge">완전 삭제</button></div></li>'
           );
         })
         .join("") +
@@ -660,10 +660,34 @@ document.addEventListener("DOMContentLoaded", function () {
     renderAll();
   }
 
+  // 완전 삭제: 보관함에서도 완전히 지운다 — 복원할 수 없다(과거 판매·폐기 기록은 그 메뉴의 레시피 없이 그대로 남는다)
+  function purgeMenu(index) {
+    var d = DELETED_RECIPES[index];
+    confirmDialog({
+      title: "'" + d.menu + "'을(를) 완전히 삭제할까요?",
+      message: "이후에는 복원할 수 없습니다.",
+      details: ["이 " + NOUN + "가 들어간 과거 판매·폐기 기록은 지워지지 않지만, 레시피 없이 계산되어 그 기간의 재고 수치가 달라집니다."],
+      confirmLabel: "완전 삭제",
+    }).then(function (ok) {
+      if (!ok) {
+        return;
+      }
+      DELETED_RECIPES.splice(index, 1);
+      showMsg("'" + d.menu + "' " + NOUN + "를 완전히 삭제했습니다.", "empty");
+      renderAll();
+    });
+  }
+
   document.getElementById("deleted-wrap").addEventListener("click", function (e) {
     var btn = e.target.closest("[data-ract]");
-    if (btn) {
-      restoreMenu(parseInt(btn.closest("li").getAttribute("data-idx"), 10));
+    if (!btn) {
+      return;
+    }
+    var idx = parseInt(btn.closest("li").getAttribute("data-idx"), 10);
+    if (btn.getAttribute("data-ract") === "purge") {
+      purgeMenu(idx);
+    } else {
+      restoreMenu(idx);
     }
   });
 
