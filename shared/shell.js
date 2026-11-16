@@ -105,6 +105,23 @@ document.addEventListener("click", function (e) {
   }
 });
 
+// 숫자칸에 커서가 있는 채로 마우스 휠을 돌리면 크롬이 값을 0.1씩 깎거나 올려버린다(예: 1750 → 1749.8).
+// 입력칸 위에서의 휠 스크롤은 값을 바꾸지 못하게 막는다(화면 스크롤 자체는 다른 곳에서 여전히 된다).
+document.addEventListener(
+  "wheel",
+  function (e) {
+    if (
+      e.target &&
+      e.target.tagName === "INPUT" &&
+      e.target.type === "number" &&
+      document.activeElement === e.target
+    ) {
+      e.preventDefault();
+    }
+  },
+  { passive: false }
+);
+
 // 좁은 화면(폰)에서 표를 가로 스크롤 없이 보여 주기 위해, 표의 각 칸에 머리글 이름(data-label)을 달아 둔다.
 // CSS(cafe.css의 max-width:860px 구간)가 이 값으로 행을 카드 형태("머리글 : 값")로 바꿔 보여 준다. 화면이 다시 그려질 때마다 다시 단다.
 document.addEventListener("DOMContentLoaded", function () {
