@@ -4,7 +4,7 @@
   "short_name": "ARTE 재고",
   "description": "ARTE CAFE 재고·발주 관리",
   "lang": "ko",
-  "start_url": "./cafe/index.html",
+  "start_url": "./cafe/receiving.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
