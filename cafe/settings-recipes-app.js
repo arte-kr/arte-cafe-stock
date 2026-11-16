@@ -176,10 +176,12 @@ document.addEventListener("DOMContentLoaded", function () {
     );
   }
 
+  // 카드가 많아지면 메시지(페이지 맨 위)가 지금 보던 위치(스크롤 아래쪽)에서 안 보일 수 있어, 뜰 때마다 그 위치로 화면을 옮긴다.
   function showMsg(text, kind) {
     var el = document.getElementById("recipe-msg");
     el.textContent = text;
     el.className = "form-message show " + kind;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   // ---- 재료 줄 편집기 (추가 폼 / 변경 패널 공용) ----
@@ -740,8 +742,9 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       var starts = recipeVersionStarts(menu);
       var latest = starts[starts.length - 1];
-      if (date <= latest) {
-        showMsg("적용 시작일은 현재 최신 버전(" + startLabel(latest) + ")보다 뒤여야 합니다.", "error");
+      var sameDayFix = date === latest; // 오늘(최신 버전 날짜)에 이미 저장한 걸 같은 날 다시 고치는 경우 — 새 버전을 쌓지 않고 그 버전을 바꾼다
+      if (date < latest) {
+        showMsg("적용 시작일은 현재 최신 버전(" + startLabel(latest) + ")보다 앞일 수 없습니다.", "error");
         return;
       }
       var batch = 0;
@@ -772,6 +775,14 @@ document.addEventListener("DOMContentLoaded", function () {
       if (newName !== menu) {
         renameMenu(menu, newName);
       }
+      if (sameDayFix) {
+        // 같은 날 저장한 버전을 다시 고치는 것 — 새 버전을 쌓지 않고 그 날짜의 줄만 바꿔치기한다
+        for (var ri = RECIPES.length - 1; ri >= 0; ri--) {
+          if (RECIPES[ri].productName === newName && recipeRowFrom(RECIPES[ri]) === date) {
+            RECIPES.splice(ri, 1);
+          }
+        }
+      }
       res.lines.forEach(function (l) {
         var row = { productName: newName, materialId: l.materialId, qtyPerUnit: l.qty, lossRate: l.lossPct / 100, effectiveFrom: date };
         if (IS_SEMI) {
@@ -780,9 +791,10 @@ document.addEventListener("DOMContentLoaded", function () {
         RECIPES.push(row);
       });
       showMsg(
-        "'" + newName + "' " + NOUN + "를 " + date + "부터 새 버전으로 적용합니다." +
-          (newName !== menu ? " 이름도 '" + menu + "'에서 '" + newName + "'(으)로 바뀌었습니다 (다른 레시피가 이걸 재료로 쓰고 있었다면 그쪽도 같이 바뀝니다)." : "") +
-          " 이전 기록은 기존 " + NOUN + "로 계산됩니다.",
+        (sameDayFix
+          ? "'" + newName + "' " + NOUN + "의 " + date + " 버전을 다시 고쳤습니다."
+          : "'" + newName + "' " + NOUN + "를 " + date + "부터 새 버전으로 적용합니다. 이전 기록은 기존 " + NOUN + "로 계산됩니다.") +
+          (newName !== menu ? " 이름도 '" + menu + "'에서 '" + newName + "'(으)로 바뀌었습니다 (다른 레시피가 이걸 재료로 쓰고 있었다면 그쪽도 같이 바뀝니다)." : ""),
         "success"
       );
     }

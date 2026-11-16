@@ -131,10 +131,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
   renderMaterialTable();
 
+  // 원재료가 많아지면 메시지(페이지 맨 위)가 지금 보던 위치(스크롤 아래쪽)에서 안 보일 수 있어, 뜰 때마다 그 위치로 화면을 옮긴다.
   function showMaterialMsg(text, kind) {
     var el = document.getElementById("material-msg");
     el.textContent = text;
     el.className = "form-message show " + kind;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   function findMaterial(id) {
